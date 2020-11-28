@@ -69,7 +69,7 @@ int getDivisor()
     // inverted output
     divisor ^= 0xF;
 
-    return divisor ? divisor : 1;
+    return divisor;
 }
 
 bool punchCycle()
@@ -108,37 +108,38 @@ void cycleStart()
     // enable motor
     rotMotor.enableOutputs();
 
-    for (int cycle = 0; cycle < divisor; cycle ++)
-    {
-        position = (1.0 * microstepsPerRevolution / divisor) * cycle;
-        rotMotor.runToNewPosition(position);
-
-//        rotMotor.moveTo(position);
-//        while(rotMotor.distanceToGo())
-//        {
-//            rotMotor.run();
-//        }
-
-        // emergency stop
-        if (digitalRead(START_BUTTON_PIN))
-        {
-            // disable motor
-            rotMotor.disableOutputs();
-            return;
-        }
-        
-        if (!punchCycle())
-        {
-            // disable motor
-            rotMotor.disableOutputs();
-            return;
-        }
-    }
-
     digitalWrite(SERVO1_PIN, SERVO1_ACTIVE);
     delay(SERVO1_PULSE_WIDTH);
-    punchCycle();
+    bool sts = punchCycle();
     digitalWrite(SERVO1_PIN, !SERVO1_ACTIVE);
+
+    if (sts)
+    {
+        for (int cycle = 0; cycle < divisor; cycle ++)
+        {
+            position = (1.0 * microstepsPerRevolution / divisor) * cycle;
+            rotMotor.runToNewPosition(position);
+    
+    //        rotMotor.moveTo(position);
+    //        while(rotMotor.distanceToGo())
+    //        {
+    //            rotMotor.run();
+    //        }
+    
+            // emergency stop
+            if (digitalRead(START_BUTTON_PIN))
+            {
+                // disable motor
+                rotMotor.disableOutputs();
+                return;
+            }
+            
+            if (!punchCycle())
+            {
+                break;
+            }
+        }
+    }
     
     // disable motor
     rotMotor.disableOutputs();
