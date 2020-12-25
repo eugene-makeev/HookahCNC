@@ -1,9 +1,13 @@
-#include "AccelStepper.h"
-#include "SerialCommand.h"
-#include "button.h"
 #include "Config.h"
-#include "Cmd.h"
+#if (USE_FAST_ACCEL_STEPPER_LIB == 1)
+#include "FastAccelStepper.h"
+#else
+#include "AccelStepper.h"
+#endif
 
+#include "SerialCommand.h"
+#include "Cmd.h"
+#include "button.h"
 //-----------------------------------------------------------------------------------------------------------
 long microstepsPerRevolution = MICROSTEPS_PER_REVOLUTION;
 int rotAxisSpeed = ROT_AXIS_MAX_SPEED;
@@ -14,8 +18,14 @@ void cycleStart(void);
 // Buttons
 Button startButtonPush(START_BUTTON_PIN, cycleStart);
 
+#if (USE_FAST_ACCEL_STEPPER_LIB == 1)
+FastAccelStepperEngine engine = FastAccelStepperEngine();
+FastAccelStepper *stepper = NULL;
+#else
 // stepper motor
 AccelStepper rotMotor(1, ROT_AXIS_STEP_PIN, ROT_AXIS_DIR_PIN);
+AccelStepper *stepper = &rotMotor;
+#endif
 
 void setup()
 {
@@ -28,14 +38,27 @@ void setup()
     makeComInterface();
 #endif
 
-    // motors
-    rotMotor.setEnablePin(ROT_AXIS_EN_PIN);
-    rotMotor.setPinsInverted(!ROT_AXIS_DIR_ACTIVE, !ROT_AXIS_STEP_ACTIVE, !ROT_AXIS_EN_ACTIVE);
-    rotMotor.disableOutputs();
-    //rotMotor.setMinPulseWidth(50);
-    rotMotor.setMaxSpeed(rotAxisSpeed);
-    rotMotor.setAcceleration(rotAxisAccel);
-    rotMotor.setSpeed(rotAxisSpeed);
+    // configure motors
+#if (USE_FAST_ACCEL_STEPPER_LIB == 1)
+    engine.init();
+    stepper = engine.stepperConnectToPin(ROT_AXIS_STEP_PIN);
+    if (stepper) {
+       stepper->setDirectionPin(ROT_AXIS_DIR_PIN);
+       stepper->setEnablePin(ROT_AXIS_EN_PIN);
+       stepper->setAutoEnable(false);
+  
+       stepper->setSpeed(1000);       // the parameter is us/step !!!??
+       stepper->setAcceleration(100);
+    }
+#else
+    stepper->setEnablePin(ROT_AXIS_EN_PIN);
+    stepper->setPinsInverted(!ROT_AXIS_DIR_ACTIVE, !ROT_AXIS_STEP_ACTIVE, !ROT_AXIS_EN_ACTIVE);
+    stepper->disableOutputs();
+    //stepper->setMinPulseWidth(50);
+    stepper->setMaxSpeed(rotAxisSpeed);
+    stepper->setAcceleration(rotAxisAccel);
+    stepper->setSpeed(rotAxisSpeed);
+#endif
 
     // servo and loopback pins setup
     pinMode(SERVO0_PIN, OUTPUT);
@@ -104,33 +127,35 @@ void cycleStart()
     long position = 0;
 
     // reset current position
-    rotMotor.setCurrentPosition(position);
+    stepper->setCurrentPosition(position);
     // enable motor
-    rotMotor.enableOutputs();
+    stepper->enableOutputs();
 
-    digitalWrite(SERVO1_PIN, SERVO1_ACTIVE);
-    delay(SERVO1_PULSE_WIDTH);
     bool sts = punchCycle();
-    digitalWrite(SERVO1_PIN, !SERVO1_ACTIVE);
 
-    if (sts)
+    if (sts && divisor)
     {
+        digitalWrite(SERVO1_PIN, SERVO1_ACTIVE);
+        delay(SERVO1_PULSE_WIDTH);
         for (int cycle = 0; cycle < divisor; cycle ++)
         {
             position = (1.0 * microstepsPerRevolution / divisor) * cycle;
-            rotMotor.runToNewPosition(position);
-    
-    //        rotMotor.moveTo(position);
-    //        while(rotMotor.distanceToGo())
-    //        {
-    //            rotMotor.run();
-    //        }
-    
+
+//          stepper->runToNewPosition(position);
+
+            stepper->moveTo(position);
+            while(stepper->isRunning())
+            {
+#if (USE_FAST_ACCEL_STEPPER_LIB == 0)
+                stepper->run();
+#endif
+            }
+
             // emergency stop
             if (digitalRead(START_BUTTON_PIN))
             {
                 // disable motor
-                rotMotor.disableOutputs();
+                stepper->disableOutputs();
                 return;
             }
             
@@ -139,10 +164,12 @@ void cycleStart()
                 break;
             }
         }
+            
+        digitalWrite(SERVO1_PIN, !SERVO1_ACTIVE);
     }
     
     // disable motor
-    rotMotor.disableOutputs();
+    stepper->disableOutputs();
 }
 
 void loop()

@@ -10,6 +10,7 @@
 
 #define VERSION_STR "HookahCNC Firmware Version 1.0.0"
 
+#define USE_FAST_ACCEL_STEPPER_LIB (0)
 #define ENABLE_SERIAL_INTERFACE (0)
 #define LOOPBACK_PIN_ANLOG      (0)
 
